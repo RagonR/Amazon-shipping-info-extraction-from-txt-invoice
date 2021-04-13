@@ -1,9 +1,5 @@
-import csv
 import os
 import xlrd
-
-
-# from xlsxwriter import Workbook
 
 
 def get_data_from_file(path):
@@ -16,27 +12,14 @@ def get_data_from_file(path):
         csv_file = open("csv-output/byla.csv", encoding='utf-8', mode='a')
         for columns in range(sheet.nrows):
             if not columns == 0:
+                old_data = sheet.row_values(columns - 1)
                 data = sheet.row_values(columns)
-                add_to_mail_csv(data, csv_file)
+                if not str(old_data[9]) == str(data[9]):
+                    add_to_mail_csv(data, csv_file, sheet, columns)
+        print(os.path.basename(path[:-5] + '.xlsx') + ' added to byla.csv')
         csv_file.close()
     except Exception as e:  # work on python 3.x
         print('Failed: ' + str(e))
-
-
-# def convert_txt_to_xlsx(path):
-#     # noinspection PyBroadException
-#     try:
-#         workbook = Workbook(path[:-4] + '.xlsx')
-#         worksheet = workbook.add_worksheet()
-#         with open(path, 'rt') as f:
-#             reader = csv.reader(f, delimiter='\t')
-#             for r, row in enumerate(reader):
-#                 for c, col in enumerate(row):
-#                     worksheet.write(r, c, col)
-#         workbook.close()
-#     except:
-#         print('Some data may be lost')
-#         print('Please close ' + os.path.basename(path[:-4] + '.xlsx'))
 
 
 def read_SKU_list_from_file(sku_name, sku_weight, sku_package_weight):
@@ -53,28 +36,46 @@ def read_SKU_list_from_file(sku_name, sku_weight, sku_package_weight):
         print('read_SKU_list_from_file failed')
 
 
-def get_weight(sku_name, sku_weight, sku_package_weight, sku_cloth):
+def multiple_order(sku_name, sku_weight, phone_number, sheet, columns, weight) -> int:
+    if int(sheet.nrows - 1) >= int(columns + 1):
+        new_data = sheet.row_values(columns + 1)
+        if str(new_data[9]) == phone_number:
+            new_sku = str(new_data[10]).strip('123456789').strip()
+            index_name = sku_name.index(new_sku)
+            weight += int(sku_weight[index_name])
+            print('Combined order, phone number: ' + phone_number)
+            weight = multiple_order(sku_name, sku_weight, phone_number, sheet, columns + 1, weight)
+            return weight
+        else:
+            return weight
+    else:
+        return weight
+
+
+def get_weight(sku_name, sku_weight, sku_package_weight, sku_cloth, phone_number, sheet, columns):
     try:
-        sku = str(sku_cloth).strip('123456789').strip()
+        sku = str(sku_cloth).strip('0123456789').strip()
+        # sku = sku.strip('0123456789')
         index_name = sku_name.index(sku)
-        return int(sku_weight[index_name]) + int(sku_package_weight[index_name])
+        weight: int = int(sku_weight[index_name]) + int(sku_package_weight[index_name])
+        weight = multiple_order(sku_name, sku_weight, phone_number, sheet, columns, weight)
+        return weight
     except:
-        print('get_weight failed. Couldnt find: ' + sku + ' in the SKU.xlsx, so used default weight 150')
+        print('get_weight failed. Couldnt find: ' + sku + ' in the SKU.xlsx. Default weight 150 used')
         return 150
 
 
-def add_to_mail_csv(data, csv_file):
+def add_to_mail_csv(data, csv_file, sheet, columns):
     sku_name: list = []
     sku_weight: list = []
     sku_package_weight: list = []
     read_SKU_list_from_file(sku_name, sku_weight, sku_package_weight)
-    order_weight = get_weight(sku_name, sku_weight, sku_package_weight, str(data[10]))
+    order_weight = get_weight(sku_name, sku_weight, sku_package_weight, str(data[10]), str(data[9]), sheet, columns)
     order_weight = order_weight * int(data[12])
     if order_weight > 500:
         typo_of_shipment = 'P2P_1_M'
     else:
         typo_of_shipment = 'P2P_1_S'
-
     try:
         csv_file.write(
             '\n' + typo_of_shipment + ',,' + str(data[8]) + ',,,,,' + str(data[20]) + ',' + str(data[22]) +
